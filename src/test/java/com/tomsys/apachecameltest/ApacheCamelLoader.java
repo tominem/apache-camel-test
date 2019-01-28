@@ -1,60 +1,88 @@
 package com.tomsys.apachecameltest;
 
-import org.apache.camel.CamelContext;
-import org.apache.camel.LoggingLevel;
-import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.impl.DefaultCamelContext;
-import org.junit.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
-//@RunWith(SpringRunner.class)
-//@SpringBootTest
+import org.apache.camel.CamelContext;
+import org.apache.camel.builder.RouteBuilder;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.junit4.SpringRunner;
+
+@RunWith(SpringRunner.class)
+@SpringBootTest
 public class ApacheCamelLoader {
 	
-	@Test
-	public void test_pgp_encypt() throws Exception {
-		
-		CamelContext context = new DefaultCamelContext();
-		context.addRoutes(new RouteBuilder() {
-
-			@Override
-			public void configure() throws Exception {
-
-				from("file:original?noop=true")
-					.marshal()
-					.pgp("public-key.gpg", "ewerton@example.com")
-				.to("file:encrypt?fileName=encrypted.enc");
-				
-			}
-			
-		});
-
-		context.start();
-		Thread.sleep(5000);
-		context.stop();
-	}
+	@Autowired
+	private CamelContext camelContext;
+	
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+	
+//	@Test
+//	public void test_pgp_encrypt() throws Exception {
+//		
+//		CamelContext context = new DefaultCamelContext();
+//		context.addRoutes(new RouteBuilder() {
+//
+//			@Override
+//			public void configure() throws Exception {
+//
+//				from("file:original?noop=true")
+//					.marshal()
+//					.pgp("public-key.gpg", "ewerton@example.com")
+//				.to("file:encrypt?fileName=encrypted.enc");
+//				
+//			}
+//			
+//		});
+//
+//		context.start();
+//		Thread.sleep(5000);
+//		context.stop();
+//	}
 	
 	@Test
 	public void test_pgp_decrypt() throws Exception {
 		
-		CamelContext context = new DefaultCamelContext();
-		context.addRoutes(new RouteBuilder() {
+		doTheWholeThing();
+
+		Integer countProducts = jdbcTemplate.queryForObject("Select count(id) from product", Integer.class);
+		Integer countBrands = jdbcTemplate.queryForObject("Select count(id) from brand", Integer.class);
+		
+		assertThat(10).isEqualTo(countProducts);
+		assertThat(7).isEqualTo(countBrands);
+	}
+
+	private void doTheWholeThing() throws Exception, InterruptedException {
+		jdbcTemplate.execute("DELETE FROM product");
+    	jdbcTemplate.execute("DELETE FROM brand");
+		
+		camelContext.addRoutes(new RouteBuilder() {
 
 			@Override
 			public void configure() throws Exception {
 
-				from("file:encrypt?noop=true;fileName=encrypted.enc")
+				from("file:encrypt?noop=true")
 					.unmarshal()
 					.pgp("private-key.gpg", "ewerton@example.com", null)
-					.log(LoggingLevel.DEBUG, "${body}")
-				.to("file:decrypt?fileName=decrypted.csv").log(LoggingLevel.DEBUG, "${body}");
+					.to("direct:csv");
 				
+				from("direct:csv")
+					.routeId("csv-importer")
+					.log("Calling csv transform")
+					.unmarshal()
+					.csv()
+					.to("direct:insert-products");
 			}
 			
 		});
-
-		context.start();
+		
+		camelContext.start();
 		Thread.sleep(5000);
-		context.stop();
+		camelContext.stop();
 	}
 
 }
