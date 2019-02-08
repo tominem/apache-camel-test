@@ -54,6 +54,7 @@ public class ApacheCamelLoader {
 		
 		assertThat(10).isEqualTo(countProducts);
 		assertThat(7).isEqualTo(countBrands);
+		
 	}
 
 	private void doTheWholeThing() throws Exception, InterruptedException {
