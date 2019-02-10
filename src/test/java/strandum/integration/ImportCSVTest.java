@@ -1,7 +1,7 @@
 package strandum.integration;
 
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,10 +14,8 @@ import java.util.stream.IntStream;
 import javax.xml.bind.JAXBException;
 
 import org.apache.camel.CamelContext;
-import org.apache.camel.Endpoint;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.RoutesBuilder;
-import org.apache.camel.builder.PredicateBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.impl.JndiRegistry;
@@ -30,12 +28,9 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import strandum.business.service.impl.CodeServiceImpl;
-import strandum.business.service.impl.PositionServiceImpl;
-import strandum.persist.entity.BEPosition;
+import strandum.business.service.impl.CodeServiceImpl.CodeServiceImpl;
+import strandum.business.service.impl.PositionServiceImpl.PositionServiceImpl;
 import strandum.persist.entity.impl.BECodeImpl;
 import strandum.persist.entity.impl.BEPositionImpl;
 
