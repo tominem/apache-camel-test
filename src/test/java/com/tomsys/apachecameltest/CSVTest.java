@@ -9,12 +9,8 @@ import org.apache.camel.builder.PredicateBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.dataformat.csv.CsvDataFormat;
-import org.apache.camel.dataformat.csv.CsvRecordConverter;
 import org.apache.camel.test.junit4.CamelTestSupport;
-import org.apache.commons.csv.CSVRecord;
 import org.junit.Test;
-
-import com.tomsys.apachecameltest.model.Position;
 
 
 public class CSVTest extends CamelTestSupport {

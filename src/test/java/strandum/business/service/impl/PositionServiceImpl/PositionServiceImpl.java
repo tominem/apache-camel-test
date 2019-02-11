@@ -9,7 +9,7 @@ public class PositionServiceImpl {
 		return null;
 	}
 
-	public void savePosition(BEPositionImpl capture, Long index) {
+	public void savePosition(BEPositionImpl capture, int parentPosition) {
 		// TODO Auto-generated method stub
 		
 	}

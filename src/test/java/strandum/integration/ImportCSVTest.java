@@ -7,14 +7,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Array;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import javax.xml.bind.JAXBException;
 
 import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
+import org.apache.camel.Processor;
 import org.apache.camel.RoutesBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
@@ -44,20 +48,21 @@ public class ImportCSVTest extends CamelTestSupport{
 
 	private String codeServiceRef;
 	private String positionServiceRef;
+	private String orgCsvProcessor;
 	
 	@Override
 	protected void doPreSetup() throws Exception {
 		MockitoAnnotations.initMocks(this);
 		codeServiceRef      = "codeService";
 		positionServiceRef  = "positionService";
+		orgCsvProcessor     = "orgCsvFileProcessor";
 	}
 	
 	@Override
 	protected CamelContext createCamelContext() throws Exception {
 		CamelContext context = super.createCamelContext();
 		JndiRegistry registry = (JndiRegistry)((PropertyPlaceholderDelegateRegistry)context.getRegistry()).getRegistry();
-		registry.bind(codeServiceRef, codeServiceImpl);
-		registry.bind(positionServiceRef, positionServiceImpl);
+		registry.bind(orgCsvProcessor, new OrgCsvFileProcessor(codeServiceImpl, positionServiceImpl));
 		return context;
 	}
 	
@@ -138,7 +143,7 @@ public class ImportCSVTest extends CamelTestSupport{
 		ArgumentCaptor<BECodeImpl> codeCaptor = ArgumentCaptor.forClass(BECodeImpl.class);
 
 		ArgumentCaptor<BEPositionImpl> positionCaptor = ArgumentCaptor.forClass(BEPositionImpl.class);
-		ArgumentCaptor<Long> parentPositionCaptor = ArgumentCaptor.forClass(Long.class);
+		ArgumentCaptor<Integer> parentPositionCaptor = ArgumentCaptor.forClass(Integer.class);
 
 		assertMockEndpointsSatisfied();
 
@@ -209,23 +214,25 @@ public class ImportCSVTest extends CamelTestSupport{
 	protected RoutesBuilder createRouteBuilder() throws Exception {
 		return new RouteBuilder() {
 			
-			private void procSetHeader() {
-				from("direct:procedure-set-header").id("direct:procedure-set-header")
-					.setProperty("division-code",          simple("${header.row[0]}"))
-			 		.setProperty("division-description",   simple("${header.row[1]}"))
-			 		.setProperty("department-code",        simple("${header.row[2]}"))
-			 		.setProperty("department-description", simple("${header.row[3]}"))
-			 		.setProperty("country-code",   		   simple("${header.row[4]}"))
-			 		.setProperty("country-description",    simple("${header.row[5]}"))
-			 		.setProperty("position-code")   	   .groovy("request.headers.get('row')[6] as Integer")
-			 		.setProperty("position-description",   simple("${header.row[7]}"))
-			 		.setProperty("parent-position-code")   .groovy("request.headers.get('row')[8] as Integer")
-			 		.setProperty("org-unit-code",   	   simple("${header.row[9]}"))
-			 		.setProperty("org-unit-description",   simple("${header.row[10]}"))
-			 		.setProperty("cost-code",   		   simple("${header.row[11]}"))
-			 		.setProperty("position-status",   	   simple("${header.row[12]}"))
-			 	.end();
-			}
+
+//			private void procSetHeader() {
+//				from("direct:procedure-set-header")  
+//					.id("direct:procedure-set-header")
+//					.setProperty("division-code",          simple("${header.row[0]}"))
+//			 		.setProperty("division-description",   simple("${header.row[1]}"))
+//			 		.setProperty("department-code",        simple("${header.row[2]}"))
+//			 		.setProperty("department-description", simple("${header.row[3]}"))
+//			 		.setProperty("country-code",   		   simple("${header.row[4]}"))
+//			 		.setProperty("country-description",    simple("${header.row[5]}"))
+//			 		.setProperty("position-code")   	   .groovy("request.headers.get('row')[6] as Integer")
+//			 		.setProperty("position-description",   simple("${header.row[7]}"))
+//			 		.setProperty("parent-position-code")   .groovy("request.headers.get('row')[8] as Integer")
+//			 		.setProperty("org-unit-code",   	   simple("${header.row[9]}"))
+//			 		.setProperty("org-unit-description",   simple("${header.row[10]}"))
+//			 		.setProperty("cost-code",   		   simple("${header.row[11]}"))
+//			 		.setProperty("position-status",   	   simple("${header.row[12]}"))
+//			 	.end();
+//			}
 			
 			@Override
 			public void configure() throws Exception {
@@ -233,197 +240,218 @@ public class ImportCSVTest extends CamelTestSupport{
 				CsvDataFormat csv = new CsvDataFormat();
 				csv.setLazyLoad(true);
 				csv.setDelimiter("|");
+				csv.setTrim(true);
+				csv.setHeader(Arrays.asList(
+					"division-code",         
+					"division-description",  	
+					"department-code",       	
+					"department-description",	
+					"country-code",   		  	
+					"country-description",   	
+					"position-code",   	  	
+					"position-description",  	
+					"parent-position-code",  	
+					"org-unit-code",   	  	
+					"org-unit-description",  	
+					"cost-code",   		  	
+					"position-status"   	  	
+				));
+				csv.setUseMaps(true);
 				
 				// define procedures routes
-				procSetHeader();
+//				procSetHeader();
 				
 				// main route
-				from("file://test/out?noop=true")
+//				from("file://test/out?noop=true")
+				from("file://src/test/resources/out?noop=true")
 					.id("import-csv-org-file")
 					.log("fileName= ${header.camelFileName}")
 				 	.unmarshal(csv)
-			 		.split()
-				 		.body()
-				 		.setProperty("current-line-idx", simple("${exchangeProperty.CamelSplitIndex}"))
-				 		.setProperty("current-line", simple("${body}"))
-				 		.choice()
-				 			.when(simple("${body.size} == 13"))
-					 			.setHeader("row", simple("${body}"))
-					 			.to("direct:procedure-set-header")
-					 			
-					 			.to("direct:handle-division")
-				 				
-				 				.endChoice()
-				 			.otherwise()
-				 			 	.log(LoggingLevel.ERROR, "Body is different than 13") //integrate with hook stages
-				 			 	.endChoice()
-				 		.end()
-				 		.to("mock:result") // calls mock:result
-			 		.end()
-			 		.log(LoggingLevel.INFO, "FINISHED !!!!!"); //maybe insert pending position
+				 	.convertBodyTo(List.class)
+				 	.process(orgCsvProcessor)
+				 	.to("mock:result");
+//			 		.split()
+//				 		.body()
+//				 		.setProperty("current-line-idx", simple("${exchangeProperty.CamelSplitIndex}"))
+//				 		.setProperty("current-line", simple("${body}"))
+//				 		.choice()
+//				 			.when(simple("${body.size} == 13"))
+//					 			.setHeader("row", simple("${body}"))
+//					 			.to("direct:procedure-set-header")
+//					 			
+//					 			.to("direct:handle-division")
+//				 				
+//				 				.endChoice()
+//				 			.otherwise()
+//				 			 	.log(LoggingLevel.ERROR, "Body is different than 13") //integrate with hook stages
+//				 			 	.endChoice()
+//				 		.end()
+//				 		.to("mock:result") // calls mock:result
+//			 		.end()
+//			 		.log(LoggingLevel.INFO, "FINISHED !!!!!"); //maybe insert pending position
 				
 				// route to deal with division
-				from("direct:handle-division")
-					.to("direct:procedure-clean-code-props")
-					.setProperty("code-header", constant("division"))
-	 				.setProperty("code-table", constant("DIVISION"))
-	 				.setProperty("code-id", simple("${property.division-code}"))
-	 				.setProperty("code-description", simple("${property.division-description}"))
-	 				.setProperty("next-route", constant("direct:handle-department"))
- 				.to("direct:procedure-code-table-values");
-
-				// route to deal with department
-				from("direct:handle-department")
-					.to("direct:procedure-clean-code-props")
-					.setProperty("code-header", constant("department"))
-					.setProperty("code-table", constant("DEPARTMENT"))
-					.setProperty("code-id", simple("${property.department-code}"))
-					.setProperty("code-description", simple("${property.department-description}"))
-					.setProperty("next-route", constant("direct:handle-country"))
-				.to("direct:procedure-code-table-values");
-
-				// route to deal with country
-				from("direct:handle-country")
-					.to("direct:procedure-clean-code-props")
-					.setProperty("code-header", constant("country"))
-					.setProperty("code-table", constant("COUNTRIES"))
-					.setProperty("code-id", simple("${property.country-code}"))
-					.setProperty("code-description", simple("${property.country-description}"))
-					.setProperty("next-route", constant("direct:handle-org-unit"))
-				.to("direct:procedure-code-table-values");
-
-				// route to deal with org unit
-				from("direct:handle-org-unit")
-					.to("direct:procedure-clean-code-props")
-					.setProperty("code-header", constant("org-unit"))
-					.setProperty("code-table", constant("ORG_UNITS"))
-					.setProperty("code-id", simple("${property.org-unit-code}"))
-					.setProperty("code-description", simple("${property.org-unit-description}"))
-					.setProperty("code-value-a1", simple("${property.cost-code}"))
-					.setProperty("next-route", constant("direct:handle-position"))
-				.to("direct:procedure-code-table-values");
-				
-				// route to deal with positions
-				from("direct:handle-position")
-					.id("handle-with-position")
-					.setProperty("current-position", simple("null")) // initialize header
-					.setProperty("parent-position", simple("null"))  // initialize header
-				    .bean(positionServiceRef, "findPositionByPositionId(${property.position-code})")
-				    .log("return findPositionByPositionId(${property.position-code}) = ${body}")
-				    .setProperty("current-position", simple("${body}"))
-				    .bean(positionServiceRef, "findPositionByPositionId(${property.parent-position-code})")
-				    .log("return findPositionByPositionId(${property.parent-position-code}) = ${body}")
-				    .setProperty("parent-position", simple("${body}"))
-				    .choice()
-					    .when(simple("${property.parent-position} == null"))
-					    	.log("PORRA")
-					    	.to("direct:procedure-set-position-fields")  
-					    	.to("direct:procedure-check-parent-position-recursively") 
-					    	.endChoice()
-				    	.when(simple("${property.current-position} == null or ${property.current-position} != null and ${property.parent-position} != null"))
-				    		.to("direct:procedure-set-position-fields") 
-				    		.to("direct:procedure-save-position")  		
-				    		.endChoice()
-				    	.otherwise()
-				    		.log(LoggingLevel.ERROR, "There is not parent position ${property.parent-position-code} for the current position ${property.position-code}")
-				    		.endChoice()
-				    .end()
-				.end();
-				
-				// route store in memory pending-positions
-				from("direct:procedure-check-parent-position-recursively")
-					.id("procedure-check-parent-position-recursively")
-					.setProperty("target-parent-position-code").simple("${property.parent-position-code}")
-					.log("FILE= ${header.camelFileName}")
-					.setHeader("csvFile", simple("${header.camelFileName}"))
-					.from("file://test/out?noop=true&fileName=org.csv")
-					.unmarshal(csv)
-					.convertBodyTo(List.class)
-//					.split()
-//						.body()
-//						.log("read the file from line ${property.current-line-idx}: ${body}")
-//						.setHeader("row", simple("${body}"))
-//						.to("direct:procedure-set-header") //set headers again
-//						.choice()
-//							.when(simple("${exchangeProperty.CamelSplitIndex} > ${property.current-line-idx}"))
-//								.to("direct:procedure-check-parent-position")
-//								.endChoice()
-//							.otherwise()
-//								.setHeader("row", simple("${property.current-line}"))
-//								.to("direct:procedure-set-header") //set headers again
-//								.endChoice()
-//						.end()
+//				from("direct:handle-division")
+//					.to("direct:procedure-clean-code-props")
+//					.setProperty("code-header", constant("division"))
+//	 				.setProperty("code-table", constant("DIVISION"))
+//	 				.setProperty("code-id", simple("${property.division-code}"))
+//	 				.setProperty("code-description", simple("${property.division-description}"))
+//	 				.setProperty("next-route", constant("direct:handle-department"))
+// 				.to("direct:procedure-code-table-values");
+//
+//				// route to deal with department
+//				from("direct:handle-department")
+//					.to("direct:procedure-clean-code-props")
+//					.setProperty("code-header", constant("department"))
+//					.setProperty("code-table", constant("DEPARTMENT"))
+//					.setProperty("code-id", simple("${property.department-code}"))
+//					.setProperty("code-description", simple("${property.department-description}"))
+//					.setProperty("next-route", constant("direct:handle-country"))
+//				.to("direct:procedure-code-table-values");
+//
+//				// route to deal with country
+//				from("direct:handle-country")
+//					.to("direct:procedure-clean-code-props")
+//					.setProperty("code-header", constant("country"))
+//					.setProperty("code-table", constant("COUNTRIES"))
+//					.setProperty("code-id", simple("${property.country-code}"))
+//					.setProperty("code-description", simple("${property.country-description}"))
+//					.setProperty("next-route", constant("direct:handle-org-unit"))
+//				.to("direct:procedure-code-table-values");
+//
+//				// route to deal with org unit
+//				from("direct:handle-org-unit")
+//					.to("direct:procedure-clean-code-props")
+//					.setProperty("code-header", constant("org-unit"))
+//					.setProperty("code-table", constant("ORG_UNITS"))
+//					.setProperty("code-id", simple("${property.org-unit-code}"))
+//					.setProperty("code-description", simple("${property.org-unit-description}"))
+//					.setProperty("code-value-a1", simple("${property.cost-code}"))
+//					.setProperty("next-route", constant("direct:handle-position"))
+//				.to("direct:procedure-code-table-values");
+//				
+//				// route to deal with positions
+//				from("direct:handle-position")
+//					.id("handle-with-position")
+//					.setProperty("current-position", simple("null")) // initialize header
+//					.setProperty("parent-position", simple("null"))  // initialize header
+//				    .bean(positionServiceRef, "findPositionByPositionId(${property.position-code})")
+//				    .log("return findPositionByPositionId(${property.position-code}) = ${body}")
+//				    .setProperty("current-position", simple("${body}"))
+//				    .bean(positionServiceRef, "findPositionByPositionId(${property.parent-position-code})")
+//				    .log("return findPositionByPositionId(${property.parent-position-code}) = ${body}")
+//				    .setProperty("parent-position", simple("${body}"))
+//				    .choice()
+//					    .when(simple("${property.parent-position} == null"))
+//					    	.log("PORRA")
+//					    	.to("direct:procedure-set-position-fields")  
+//					    	.to("direct:procedure-check-parent-position-recursively") 
+//					    	.endChoice()
+//				    	.when(simple("${property.current-position} == null or ${property.current-position} != null and ${property.parent-position} != null"))
+//				    		.to("direct:procedure-set-position-fields") 
+//				    		.to("direct:procedure-save-position")  		
+//				    		.endChoice()
+//				    	.otherwise()
+//				    		.log(LoggingLevel.ERROR, "There is not parent position ${property.parent-position-code} for the current position ${property.position-code}")
+//				    		.endChoice()
+//				    .end()
+//				.end();
+//				
+//				// route store in memory pending-positions
+//				from("direct:procedure-check-parent-position-recursively")
+//					.id("procedure-check-parent-position-recursively")
+//					.setProperty("target-parent-position-code").simple("${property.parent-position-code}")
+//					.log("FILE= ${header.camelFileName}")
+//					.setHeader("csvFile", simple("${header.camelFileName}"))
+//					.from("file://test/out?noop=true&fileName=org.csv")
+//					.unmarshal(csv)
+//					.convertBodyTo(List.class)
+////					.split()
+////						.body()
+////						.log("read the file from line ${property.current-line-idx}: ${body}")
+////						.setHeader("row", simple("${body}"))
+////						.to("direct:procedure-set-header") //set headers again
+////						.choice()
+////							.when(simple("${exchangeProperty.CamelSplitIndex} > ${property.current-line-idx}"))
+////								.to("direct:procedure-check-parent-position")
+////								.endChoice()
+////							.otherwise()
+////								.setHeader("row", simple("${property.current-line}"))
+////								.to("direct:procedure-set-header") //set headers again
+////								.endChoice()
+////						.end()
+////					.end()
+//				.end();
+//				
+//				from("direct:procedure-check-parent-position")
+//					.id("procedure-check-parent-position")
+//					.choice()
+//						.when(simple("${property.position-code} == ${property.target-parent-position-code}"))
+//							.to("direct:handle-position")
+//							.setHeader("row", simple("${property.current-line}"))
+//							.to("direct:procedure-set-header")
+//							.to("direct:handle-position") //save current position
+//							.endChoice()
 //					.end()
-				.end();
-				
-				from("direct:procedure-check-parent-position")
-					.id("procedure-check-parent-position")
-					.choice()
-						.when(simple("${property.position-code} == ${property.target-parent-position-code}"))
-							.to("direct:handle-position")
-							.setHeader("row", simple("${property.current-line}"))
-							.to("direct:procedure-set-header")
-							.to("direct:handle-position") //save current position
-							.endChoice()
-					.end()
-				.end();
-				
-				// route to set position fields into either an existing position or a new one
-				from("direct:procedure-set-position-fields")
-					.id("procedure-set-position-fields")
-					.choice()
-						.when(simple("${property.current-position} == null"))
-							.setProperty("current-position").groovy("new strandum.persist.entity.impl.BEPositionImpl()")
-							.log("new position instantiated")
-						.endChoice()
-					.end()
-					.script().groovy("exchange.properties.get('current-position').setIndexId(exchange.properties.get('position-code'))") 			//Position Code
-					.script().groovy("exchange.properties.get('current-position').setDescription(exchange.properties.get('position-description'))") //Position Description
-					.script().groovy("exchange.properties.get('current-position').setLevel1(exchange.properties.get('division-code'))")   	        //Division Code
-					.script().groovy("exchange.properties.get('current-position').setLevel3(exchange.properties.get('department-code'))")           //Department Code
-					.script().groovy("exchange.properties.get('current-position').setCountry(exchange.properties.get('country-code'))")             //Country Code
-					.script().groovy("exchange.properties.get('current-position').setOrgUnit(exchange.properties.get('org-unit-code'))")            //Division Code
-					.log("${property.current-position}")
-				.end();
-				
-				// route to save position
-				from("direct:procedure-save-position")
-					.id("procedure-procedure-save-position")
-					.bean(positionServiceRef, "savePosition(${property.current-position}, ${property.parent-position.getIndexId()})")
-				.end();
-				
-				from("direct:procedure-code-table-values")
-				 	.id("procedure-code-table-values")
-				 	.bean(codeServiceRef, "getCodeByTableIdCodeId(${property.code-table}, ${property.code-id}})")
-				 	.choice()
-				 		.when(simple("${body} != null"))
-				 			.setHeader("${property.code-header}", body())
-				 			.script().groovy("request.headers.get(exchange.properties.get('code-header')).setDescription(exchange.properties.get('code-description'))")
-				 			.script().groovy("request.headers.get(exchange.properties.get('code-header')).setValueA1(exchange.properties.get('code-value-a1'))")
-				 			.setProperty("code-param", header("${property.code-header}"))
-				 			.endChoice()
-				 		.otherwise()
-					 		.setHeader("${property.code-header}")
-			 					.groovy("def strandum.persist.entity.impl.BECodeImpl code = new strandum.persist.entity.impl.BECodeImpl();"
-			 						  +	"code.setCodeId(exchange.properties.get('code-id')); "
-			 						  +	"code.setDescription(exchange.properties.get('code-description')); "
-			 						  +	"code.setValueA1(exchange.properties.get('code-value-a1')); "
-				 					  + "return code;")
-			 				.setProperty("code-param", header("${property.code-header}"))
-			 				.endChoice()
-				 	.end()
-					.bean(codeServiceRef, "save(${property.code-param})")
-					.log("code-table= ${property.code-table} - " + codeServiceRef + ".save(${property.code-param})")
-					.recipientList(simple("${property.next-route}"))
-				 .end();
-				
-				from("direct:procedure-clean-code-props")
-					.setProperty("code-header", 	 simple("null"))
-					.setProperty("code-table", 		 simple("null"))
-					.setProperty("code-id", 		 simple("null"))
-					.setProperty("code-description", simple("null"))
-					.setProperty("code-value-a1", 	 simple("null"))
-				.end();
+//				.end();
+//				
+//				// route to set position fields into either an existing position or a new one
+//				from("direct:procedure-set-position-fields")
+//					.id("procedure-set-position-fields")
+//					.choice()
+//						.when(simple("${property.current-position} == null"))
+//							.setProperty("current-position").groovy("new strandum.persist.entity.impl.BEPositionImpl()")
+//							.log("new position instantiated")
+//						.endChoice()
+//					.end()
+//					.script().groovy("exchange.properties.get('current-position').setIndexId(exchange.properties.get('position-code'))") 			//Position Code
+//					.script().groovy("exchange.properties.get('current-position').setDescription(exchange.properties.get('position-description'))") //Position Description
+//					.script().groovy("exchange.properties.get('current-position').setLevel1(exchange.properties.get('division-code'))")   	        //Division Code
+//					.script().groovy("exchange.properties.get('current-position').setLevel3(exchange.properties.get('department-code'))")           //Department Code
+//					.script().groovy("exchange.properties.get('current-position').setCountry(exchange.properties.get('country-code'))")             //Country Code
+//					.script().groovy("exchange.properties.get('current-position').setOrgUnit(exchange.properties.get('org-unit-code'))")            //Division Code
+//					.log("${property.current-position}")
+//				.end();
+//				
+//				// route to save position
+//				from("direct:procedure-save-position")
+//					.id("procedure-procedure-save-position")
+//					.bean(positionServiceRef, "savePosition(${property.current-position}, ${property.parent-position.getIndexId()})")
+//				.end();
+//				
+//				from("direct:procedure-code-table-values")
+//				 	.id("procedure-code-table-values")
+//				 	.bean(codeServiceRef, "getCodeByTableIdCodeId(${property.code-table}, ${property.code-id}})")
+//				 	.choice()
+//				 		.when(simple("${body} != null"))
+//				 			.setHeader("${property.code-header}", body())
+//				 			.script().groovy("request.headers.get(exchange.properties.get('code-header')).setDescription(exchange.properties.get('code-description'))")
+//				 			.script().groovy("request.headers.get(exchange.properties.get('code-header')).setValueA1(exchange.properties.get('code-value-a1'))")
+//				 			.setProperty("code-param", header("${property.code-header}"))
+//				 			.endChoice()
+//				 		.otherwise()
+//					 		.setHeader("${property.code-header}")
+//			 					.groovy("def strandum.persist.entity.impl.BECodeImpl code = new strandum.persist.entity.impl.BECodeImpl();"
+//			 						  +	"code.setCodeId(exchange.properties.get('code-id')); "
+//			 						  +	"code.setDescription(exchange.properties.get('code-description')); "
+//			 						  +	"code.setValueA1(exchange.properties.get('code-value-a1')); "
+//				 					  + "return code;")
+//			 				.setProperty("code-param", header("${property.code-header}"))
+//			 				.endChoice()
+//				 	.end()
+//					.bean(codeServiceRef, "save(${property.code-param})")
+//					.log("code-table= ${property.code-table} - " + codeServiceRef + ".save(${property.code-param})")
+//					.recipientList(simple("${property.next-route}"))
+//				 .end();
+//				
+//				from("direct:procedure-clean-code-props")
+//					.setProperty("code-header", 	 simple("null"))
+//					.setProperty("code-table", 		 simple("null"))
+//					.setProperty("code-id", 		 simple("null"))
+//					.setProperty("code-description", simple("null"))
+//					.setProperty("code-value-a1", 	 simple("null"))
+//				.end();
 				 	
 			}
 		};
